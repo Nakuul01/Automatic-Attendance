@@ -1,0 +1,123 @@
+import csv
+import xlsxwriter
+from datetime import datetime
+import os
+
+def read_student_names(file_path):
+    student_names = {'offline': {}, 'online': {}}  # Initialize dictionaries for offline and online students
+    valid_categories = ['offline', 'online']
+    try:
+        with open(file_path, 'r', newline='') as file:
+            reader = csv.reader(file)
+            header = next(reader)  # Skip header if it exists
+            for row in reader:
+                if row:  # Ensure row is not empty
+                    full_name = row[0].strip().lower()  # Convert to lowercase for case insensitivity
+                    category = row[1].strip().lower() if len(row) > 1 and row[1].strip().lower() in valid_categories else 'offline'
+                    
+                    first_name = full_name.split()[0]
+                    if first_name in student_names[category]:
+                        if isinstance(student_names[category][first_name], list):
+                            student_names[category][first_name].append(full_name)
+                        else:
+                            student_names[category][first_name] = [student_names[category][first_name], full_name]
+                    else:
+                        student_names[category][first_name] = [full_name]
+        return student_names
+    except FileNotFoundError:
+        print("File not found.")
+        return {}
+
+def flatten_student_names(student_names):
+    flattened_names = {}
+    for category, names_dict in student_names.items():
+        for first_name, full_names in names_dict.items():
+            if isinstance(full_names, list):
+                for name in full_names:
+                    flattened_names[name] = category
+            else:
+                flattened_names[full_names] = category
+    return flattened_names
+
+def mark_attendance(student_names, attendance_type):
+    flattened_names = flatten_student_names(student_names)
+    selected_names = {name: False for name, cat in flattened_names.items() if cat == attendance_type}
+    
+    while True:
+        name_or_code = input("Enter student name or code (4-digit code to stop): ").strip().lower()  # Convert input to lowercase
+        if name_or_code.isdigit() and len(name_or_code) == 4:  # Check if it's a 4-digit code
+            if name_or_code == "0000":  # Custom stop code
+                break
+            else:
+                print("Invalid code. Try again.")
+                continue
+        elif name_or_code in selected_names:  # If the entered name is a full name
+            selected_names[name_or_code] = True
+            print(f"{name_or_code} marked as present.")
+        else:
+            # Check for first name matches
+            matching_full_names = [full_name for full_name in selected_names if full_name.startswith(name_or_code)]
+            if matching_full_names:
+                if len(matching_full_names) > 1:
+                    print("Multiple students found with a matching name. Please choose one:")
+                    for i, student in enumerate(matching_full_names):
+                        print(f"{i + 1}. {student}")
+                    try:
+                        choice = int(input("Enter the corresponding number: "))
+                        if 1 <= choice <= len(matching_full_names):
+                            selected_names[matching_full_names[choice - 1]] = True
+                            print(f"{matching_full_names[choice - 1]} marked as present.")
+                        else:
+                            print("Invalid choice. Please try again.")
+                    except ValueError:
+                        print("Invalid input. Please enter a number.")
+                else:
+                    selected_names[matching_full_names[0]] = True
+                    print(f"{matching_full_names[0]} marked as present.")
+            else:
+                print("Student not found. Please try again.")
+    return selected_names
+
+def save_attendance_excel(attendance, attendance_type, directory):
+    today = datetime.now().strftime("%Y-%m-%d")
+    file_name = os.path.join(directory, f'attendance_{attendance_type}_{today}.xlsx')
+
+    workbook = xlsxwriter.Workbook(file_name)
+    worksheet = workbook.add_worksheet(attendance_type.capitalize())
+
+    # Write headers
+    worksheet.write('A1', 'Student Name')
+    worksheet.write('B1', 'Attendance')
+
+    # Write data
+    row = 1
+    for name, status in attendance.items():
+        worksheet.write(row, 0, name)
+        worksheet.write(row, 1, 'Present' if status else 'Absent')
+        row += 1
+
+    workbook.close()
+
+def main():
+    file_path = '/Users/Downloads/.csv' 
+    student_names = read_student_names(file_path)
+    if not student_names:
+        return
+    
+    # Choose attendance type
+    while True:
+        attendance_type = input("Enter 1 for offline attendance or 2 for online attendance: ").strip()
+        if attendance_type == '1':
+            attendance_type = 'offline'
+            break
+        elif attendance_type == '2':
+            attendance_type = 'online'
+            break
+        else:
+            print("Invalid input. Please enter 1 or 2.")
+
+    attendance = mark_attendance(student_names, attendance_type)
+    save_attendance_excel(attendance, attendance_type, '/Users/Downloads')
+
+if __name__ == "__main__":
+    main()
